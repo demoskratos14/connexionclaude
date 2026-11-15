@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -108,6 +109,7 @@ private fun SetupScreen(
 ) {
     var email by remember { mutableStateOf(initial?.email.orEmpty()) }
     var password by remember { mutableStateOf(initial?.password.orEmpty()) }
+    var showPassword by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -131,7 +133,16 @@ private fun SetupScreen(
             onValueChange = { password = it },
             label = { Text(stringResource(R.string.password_label)) },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (showPassword) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+            trailingIcon = {
+                TextButton(onClick = { showPassword = !showPassword }) {
+                    Text(stringResource(if (showPassword) R.string.hide_password else R.string.show_password))
+                }
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -195,12 +206,19 @@ private fun BrowserScreen(credentials: Credentials, onClose: () -> Unit) {
             AndroidView(
                 factory = { session.claudeView },
                 modifier = Modifier.fillMaxSize(),
-                update = { it.visibility = if (selected == 0) View.VISIBLE else View.GONE },
+                update = { it.visibility = if (selected == 0) View.VISIBLE else View.INVISIBLE },
             )
             AndroidView(
                 factory = { session.mailView },
                 modifier = Modifier.fillMaxSize(),
-                update = { it.visibility = if (selected == 1) View.VISIBLE else View.GONE },
+                update = {
+                    it.visibility = if (selected == 1) View.VISIBLE else View.INVISIBLE
+                    // Proton Mail calcule la hauteur de sa liste de messages à partir de la taille de la page :
+                    // on lui signale que la taille a changé quand l'onglet s'affiche.
+                    if (selected == 1) {
+                        it.evaluateJavascript("window.dispatchEvent(new Event('resize'));", null)
+                    }
+                },
             )
         }
     }

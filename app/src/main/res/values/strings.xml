@@ -10,6 +10,8 @@
     <string name="setup_note">L\'adresse sert pour Claude et pour Proton Mail. Le mot de passe Proton est chiffré avec une clé du Keystore Android et reste sur ce téléphone.</string>
     <string name="email_label">Adresse e-mail</string>
     <string name="password_label">Mot de passe Proton Mail</string>
+    <string name="show_password">Afficher</string>
+    <string name="hide_password">Masquer</string>
     <string name="save">Enregistrer</string>
     <string name="cancel">Annuler</string>
 
