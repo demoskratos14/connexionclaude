@@ -23,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -132,6 +133,8 @@ private fun HomeScreen(
     onAdd: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Mode « modifier » : activé par le bouton du bas, un clic sur une adresse l'ouvre alors en modification.
+    var editMode by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -140,7 +143,7 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = stringResource(R.string.home_intro),
+            text = stringResource(if (editMode) R.string.edit_hint else R.string.home_intro),
             style = MaterialTheme.typography.bodyMedium,
         )
         LazyColumn(
@@ -148,10 +151,19 @@ private fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(accounts, key = { it.id }) { account ->
-                Card(onClick = { onConnect(account) }, modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    onClick = { if (editMode) onEdit(account) else onConnect(account) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = if (editMode) {
+                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                        CardDefaults.cardColors()
+                    },
+                ) {
                     Row(
-                        modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = account.email, style = MaterialTheme.typography.titleMedium)
@@ -171,15 +183,30 @@ private fun HomeScreen(
                                 )
                             }
                         }
-                        TextButton(onClick = { onEdit(account) }) {
-                            Text(stringResource(R.string.edit))
+                        if (account.note.isNotBlank()) {
+                            Text(
+                                text = account.note,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                            )
                         }
                     }
                 }
             }
         }
-        OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.add_account))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    editMode = false
+                    onAdd()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.add_account))
+            }
+            OutlinedButton(onClick = { editMode = !editMode }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (editMode) R.string.edit_cancel else R.string.edit_account))
+            }
         }
     }
 }
@@ -194,6 +221,7 @@ private fun SetupScreen(
 ) {
     var email by remember { mutableStateOf(initial?.email.orEmpty()) }
     var password by remember { mutableStateOf(initial?.password.orEmpty()) }
+    var note by remember { mutableStateOf(initial?.note.orEmpty()) }
     var showPassword by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -233,6 +261,14 @@ private fun SetupScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it.take(SecretStore.MAX_NOTE_LENGTH) },
+            label = { Text(stringResource(R.string.note_label)) },
+            supportingText = { Text("${note.length}/${SecretStore.MAX_NOTE_LENGTH}") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Button(
             onClick = {
                 onSaved(
@@ -241,6 +277,7 @@ private fun SetupScreen(
                         email = email.trim(),
                         password = password,
                         lastLogin = initial?.lastLogin ?: 0L,
+                        note = note.trim(),
                     ),
                 )
             },
