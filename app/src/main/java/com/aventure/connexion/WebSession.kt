@@ -39,9 +39,21 @@ class WebSession(
     private var claudeFilled = false
     private var protonFilled = false
 
+    private var mailLoaded = false
+
     fun start() {
         WebData.wipe()
         claudeView.loadUrl(CLAUDE_URL)
+    }
+
+    /**
+     * Charge Proton Mail la première fois que son onglet est affiché (appel sans effet ensuite) :
+     * chargée pendant qu'elle est masquée, la page prenait une taille nulle et sa liste de messages
+     * restait blanche.
+     */
+    fun openMail() {
+        if (mailLoaded) return
+        mailLoaded = true
         mailView.loadUrl(MAIL_URL)
     }
 

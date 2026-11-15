@@ -213,11 +213,8 @@ private fun BrowserScreen(credentials: Credentials, onClose: () -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 update = {
                     it.visibility = if (selected == 1) View.VISIBLE else View.INVISIBLE
-                    // Proton Mail calcule la hauteur de sa liste de messages à partir de la taille de la page :
-                    // on lui signale que la taille a changé quand l'onglet s'affiche.
-                    if (selected == 1) {
-                        it.evaluateJavascript("window.dispatchEvent(new Event('resize'));", null)
-                    }
+                    // Le chargement attend que la vue soit affichée, donc qu'elle ait sa vraie taille.
+                    if (selected == 1) it.post { session.openMail() }
                 },
             )
         }
