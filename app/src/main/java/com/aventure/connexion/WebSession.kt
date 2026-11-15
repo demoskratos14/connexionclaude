@@ -4,12 +4,17 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import org.json.JSONObject
 
 /** Efface tout ce que les pages web ont pu laisser sur le téléphone (cookies, stockage local). */
@@ -38,6 +43,26 @@ class WebSession(
 
     private var claudeFilled = false
     private var protonFilled = false
+    private var probed = false
+
+    /** DIAGNOSTIC TEMPORAIRE : erreurs de la page Proton et dimensions mesurées, affichées à l'écran. */
+    var debug by mutableStateOf("")
+        private set
+
+    private fun addDebug(line: String) {
+        debug = (debug.lines() + line).filter { it.isNotBlank() }.takeLast(7).joinToString("\n")
+    }
+
+    init {
+        mailView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                if (message != null && message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    addDebug("ERR " + message.message().take(140))
+                }
+                return true
+            }
+        }
+    }
 
     private var mailLoaded = false
 
@@ -81,6 +106,14 @@ class WebSession(
     private inner class ProtonClient : WebViewClient() {
         override fun onPageFinished(view: WebView?, url: String?) {
             val uri = Uri.parse(url ?: return)
+            if (!probed && uri.host == "mail.proton.me") {
+                probed = true
+                view?.let { page ->
+                    page.postDelayed({
+                        page.evaluateJavascript(Scripts.PROBE) { addDebug("dim " + it) }
+                    }, 10_000)
+                }
+            }
             if (!protonFilled && uri.host == "account.proton.me") {
                 protonFilled = true
                 view?.evaluateJavascript(
@@ -117,6 +150,10 @@ class WebSession(
 
         @SuppressLint("SetJavaScriptEnabled")
         fun newWebView(context: Context, client: WebViewClient): WebView = WebView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.cacheMode = WebSettings.LOAD_NO_CACHE
@@ -146,6 +183,12 @@ object Scripts {
 
     // Les champs React ignorent un simple « value = ... » : on passe par le setter natif, puis on
     // déclenche les événements input/change. On attend que la page ait fini de s'afficher (30 s max).
+    /** DIAGNOSTIC TEMPORAIRE : taille de la fenêtre, de la racine de Proton, et quantité de contenu affiché. */
+    const val PROBE = "(function(){var r=document.getElementById('root');" +
+        "return [innerWidth,innerHeight,document.documentElement.clientHeight," +
+        "r?Math.round(r.getBoundingClientRect().height):-1," +
+        "document.body.innerText.length,document.querySelectorAll('*').length].join(' ');})()"
+
     private const val SET_VALUE = """
         function setValue(el, value) {
             var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;

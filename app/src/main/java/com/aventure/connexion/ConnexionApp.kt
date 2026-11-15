@@ -2,6 +2,7 @@ package com.aventure.connexion
 
 import android.view.View
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,10 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 private enum class Screen { HOME, SETUP, BROWSER }
@@ -217,6 +220,19 @@ private fun BrowserScreen(credentials: Credentials, onClose: () -> Unit) {
                     if (selected == 1) it.post { session.openMail() }
                 },
             )
+            // DIAGNOSTIC TEMPORAIRE (à retirer une fois le problème de Proton Mail résolu).
+            if (selected == 1 && session.debug.isNotEmpty()) {
+                Text(
+                    text = session.debug,
+                    color = Color.Black,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(0.75f)
+                        .background(Color(0xDDFFFFFF)),
+                )
+            }
         }
     }
 }
