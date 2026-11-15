@@ -18,7 +18,13 @@ import javax.crypto.spec.GCMParameterSpec
 data class Credentials(val email: String, val password: String)
 
 /** Une adresse enregistrée. L'identifiant sert à la retrouver quand on la modifie ou la supprime. */
-data class Account(val id: String, val email: String, val password: String)
+data class Account(
+    val id: String,
+    val email: String,
+    val password: String,
+    /** Heure (en millisecondes) de la dernière connexion, 0 si aucune connexion de moins de 24 h. */
+    val lastLogin: Long = 0L,
+)
 
 /**
  * Garde les adresses e-mail (en clair) et leurs mots de passe Proton (chiffrés en AES-GCM avec une clé
@@ -26,6 +32,9 @@ data class Account(val id: String, val email: String, val password: String)
  */
 object SecretStore {
     private const val PREFS = "connexion"
+    /** Au-delà de cette durée (24 h), l'heure de dernière connexion n'est plus gardée ni affichée. */
+    const val RECENT_LOGIN_MS = 24L * 60 * 60 * 1000
+
     private const val KEY_ACCOUNTS = "accounts"
 
     // Ancien format (une seule adresse), converti automatiquement au premier lancement.
@@ -56,6 +65,7 @@ object SecretStore {
                 JSONObject()
                     .put("id", account.id)
                     .put("email", account.email.trim())
+                    .put("lastLogin", account.lastLogin)
                     .put("password", if (account.password.isEmpty()) "" else encrypt(account.password)),
             )
         }
@@ -70,6 +80,9 @@ object SecretStore {
                 id = item.getString("id"),
                 email = item.getString("email"),
                 password = item.optString("password").takeIf { it.isNotEmpty() }?.let { decrypt(it) }.orEmpty(),
+                // Une connexion de plus de 24 h est oubliée dès la lecture (et donc à la prochaine sauvegarde).
+                lastLogin = item.optLong("lastLogin", 0L)
+                    .takeIf { System.currentTimeMillis() - it < RECENT_LOGIN_MS } ?: 0L,
             )
         }
     } catch (e: JSONException) {

@@ -1,5 +1,7 @@
 package com.aventure.connexion
 
+import android.text.format.DateFormat
+import android.text.format.DateUtils
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import java.util.Date
 import java.util.UUID
 
 private enum class Screen { HOME, SETUP, BROWSER }
@@ -95,7 +98,10 @@ fun ConnexionApp() {
             Screen.HOME -> HomeScreen(
                 accounts = accounts,
                 onConnect = { account ->
-                    active = account
+                    // On note l'heure de cette connexion ; elle s'affiche sur la ligne de l'adresse.
+                    val connected = account.copy(lastLogin = System.currentTimeMillis())
+                    updateAccounts(accounts.map { if (it.id == connected.id) connected else it })
+                    active = connected
                     screen = Screen.BROWSER
                 },
                 onEdit = { account ->
@@ -125,6 +131,7 @@ private fun HomeScreen(
     onEdit: (Account) -> Unit,
     onAdd: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -146,11 +153,24 @@ private fun HomeScreen(
                         modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = account.email,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = account.email, style = MaterialTheme.typography.titleMedium)
+                            val recent = account.lastLogin > 0 &&
+                                System.currentTimeMillis() - account.lastLogin < SecretStore.RECENT_LOGIN_MS
+                            if (recent) {
+                                val time = DateFormat.getTimeFormat(context).format(Date(account.lastLogin))
+                                val label = if (DateUtils.isToday(account.lastLogin)) {
+                                    stringResource(R.string.last_login_today, time)
+                                } else {
+                                    stringResource(R.string.last_login_yesterday, time)
+                                }
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         TextButton(onClick = { onEdit(account) }) {
                             Text(stringResource(R.string.edit))
                         }
@@ -220,6 +240,7 @@ private fun SetupScreen(
                         id = initial?.id ?: UUID.randomUUID().toString(),
                         email = email.trim(),
                         password = password,
+                        lastLogin = initial?.lastLogin ?: 0L,
                     ),
                 )
             },

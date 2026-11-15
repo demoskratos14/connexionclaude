@@ -5,6 +5,8 @@
     <string name="home_intro">Touche une adresse pour ouvrir Claude et ta boîte Proton Mail dans une session privée : tout est effacé quand tu fermes.</string>
     <string name="add_account">Ajouter une adresse</string>
     <string name="edit">Modifier</string>
+    <string name="last_login_today">Dernière connexion à %1$s</string>
+    <string name="last_login_yesterday">Dernière connexion hier à %1$s</string>
 
     <string name="setup_title">Mes informations</string>
     <string name="setup_note">L\'adresse sert pour Claude et pour Proton Mail. Le mot de passe Proton est chiffré avec une clé du Keystore Android et reste sur ce téléphone.</string>
