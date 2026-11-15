@@ -5,7 +5,11 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 import java.security.KeyStore
+import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -13,12 +17,18 @@ import javax.crypto.spec.GCMParameterSpec
 
 data class Credentials(val email: String, val password: String)
 
+/** Une adresse enregistrée. L'identifiant sert à la retrouver quand on la modifie ou la supprime. */
+data class Account(val id: String, val email: String, val password: String)
+
 /**
- * Garde l'adresse e-mail (en clair) et le mot de passe Proton (chiffré en AES-GCM avec une clé
+ * Garde les adresses e-mail (en clair) et leurs mots de passe Proton (chiffrés en AES-GCM avec une clé
  * du Keystore Android : la clé elle-même ne sort jamais du téléphone).
  */
 object SecretStore {
     private const val PREFS = "connexion"
+    private const val KEY_ACCOUNTS = "accounts"
+
+    // Ancien format (une seule adresse), converti automatiquement au premier lancement.
     private const val KEY_EMAIL = "email"
     private const val KEY_PASSWORD = "password"
     private const val KEYSTORE = "AndroidKeyStore"
@@ -26,19 +36,44 @@ object SecretStore {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val SEPARATOR = ":"
 
-    fun load(context: Context): Credentials? {
+    fun loadAccounts(context: Context): List<Account> {
         val prefs = prefs(context)
-        val email = prefs.getString(KEY_EMAIL, null)?.takeIf { it.isNotBlank() } ?: return null
+        prefs.getString(KEY_ACCOUNTS, null)?.let { return parse(it) }
+
+        // Première ouverture après la mise à jour : on reprend l'adresse enregistrée avant.
+        val email = prefs.getString(KEY_EMAIL, null)?.takeIf { it.isNotBlank() } ?: return emptyList()
         val password = prefs.getString(KEY_PASSWORD, null)?.let { decrypt(it) }.orEmpty()
-        return Credentials(email, password)
+        val migrated = listOf(Account(UUID.randomUUID().toString(), email, password))
+        saveAccounts(context, migrated)
+        prefs.edit().remove(KEY_EMAIL).remove(KEY_PASSWORD).apply()
+        return migrated
     }
 
-    fun save(context: Context, credentials: Credentials) {
-        val encrypted = if (credentials.password.isEmpty()) null else encrypt(credentials.password)
-        prefs(context).edit()
-            .putString(KEY_EMAIL, credentials.email.trim())
-            .putString(KEY_PASSWORD, encrypted)
-            .apply()
+    fun saveAccounts(context: Context, accounts: List<Account>) {
+        val array = JSONArray()
+        for (account in accounts) {
+            array.put(
+                JSONObject()
+                    .put("id", account.id)
+                    .put("email", account.email.trim())
+                    .put("password", if (account.password.isEmpty()) "" else encrypt(account.password)),
+            )
+        }
+        prefs(context).edit().putString(KEY_ACCOUNTS, array.toString()).apply()
+    }
+
+    private fun parse(json: String): List<Account> = try {
+        val array = JSONArray(json)
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            Account(
+                id = item.getString("id"),
+                email = item.getString("email"),
+                password = item.optString("password").takeIf { it.isNotEmpty() }?.let { decrypt(it) }.orEmpty(),
+            )
+        }
+    } catch (e: JSONException) {
+        emptyList()
     }
 
     private fun prefs(context: Context): SharedPreferences =

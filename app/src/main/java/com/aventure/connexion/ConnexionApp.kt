@@ -2,7 +2,6 @@ package com.aventure.connexion
 
 import android.view.View
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,13 +10,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
@@ -27,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,91 +43,147 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import java.util.UUID
 
 private enum class Screen { HOME, SETUP, BROWSER }
 
 @Composable
 fun ConnexionApp() {
     val context = LocalContext.current
-    var credentials by remember { mutableStateOf(SecretStore.load(context)) }
+    var accounts by remember { mutableStateOf(SecretStore.loadAccounts(context)) }
     var screen by remember {
-        mutableStateOf(if (credentials == null) Screen.SETUP else Screen.HOME)
+        mutableStateOf(if (accounts.isEmpty()) Screen.SETUP else Screen.HOME)
+    }
+    // Adresse en cours de modification (null = nouvelle adresse) et adresse utilisée pour se connecter.
+    var editing by remember { mutableStateOf<Account?>(null) }
+    var active by remember { mutableStateOf<Account?>(null) }
+
+    fun updateAccounts(list: List<Account>) {
+        SecretStore.saveAccounts(context, list)
+        accounts = list
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (screen) {
-            Screen.SETUP -> SetupScreen(
-                initial = credentials,
-                canCancel = credentials != null,
-                onSaved = { saved ->
-                    SecretStore.save(context, saved)
-                    credentials = saved
-                    screen = Screen.HOME
-                },
-                onCancel = { screen = Screen.HOME },
-            )
+            // key : l'écran repart de zéro quand on passe d'une adresse à une autre.
+            Screen.SETUP -> key(editing?.id) {
+                SetupScreen(
+                    initial = editing,
+                    canCancel = accounts.isNotEmpty(),
+                    onSaved = { saved ->
+                        val exists = accounts.any { it.id == saved.id }
+                        updateAccounts(
+                            if (exists) accounts.map { if (it.id == saved.id) saved else it } else accounts + saved,
+                        )
+                        screen = Screen.HOME
+                    },
+                    onDelete = { removed ->
+                        val rest = accounts.filterNot { it.id == removed.id }
+                        updateAccounts(rest)
+                        editing = null
+                        screen = if (rest.isEmpty()) Screen.SETUP else Screen.HOME
+                    },
+                    onCancel = { screen = Screen.HOME },
+                )
+            }
 
             Screen.HOME -> HomeScreen(
-                email = credentials?.email.orEmpty(),
-                onConnect = { screen = Screen.BROWSER },
-                onEdit = { screen = Screen.SETUP },
+                accounts = accounts,
+                onConnect = { account ->
+                    active = account
+                    screen = Screen.BROWSER
+                },
+                onEdit = { account ->
+                    editing = account
+                    screen = Screen.SETUP
+                },
+                onAdd = {
+                    editing = null
+                    screen = Screen.SETUP
+                },
             )
 
-            Screen.BROWSER -> credentials?.let { saved ->
-                BrowserScreen(credentials = saved, onClose = { screen = Screen.HOME })
+            Screen.BROWSER -> active?.let { account ->
+                BrowserScreen(
+                    credentials = Credentials(account.email, account.password),
+                    onClose = { screen = Screen.HOME },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HomeScreen(email: String, onConnect: () -> Unit, onEdit: () -> Unit) {
+private fun HomeScreen(
+    accounts: List<Account>,
+    onConnect: (Account) -> Unit,
+    onEdit: (Account) -> Unit,
+    onAdd: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(text = email, style = MaterialTheme.typography.titleMedium)
         Text(
             text = stringResource(R.string.home_intro),
             style = MaterialTheme.typography.bodyMedium,
         )
-        Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.connect))
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(accounts, key = { it.id }) { account ->
+                Card(onClick = { onConnect(account) }, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = account.email,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { onEdit(account) }) {
+                            Text(stringResource(R.string.edit))
+                        }
+                    }
+                }
+            }
         }
-        TextButton(onClick = onEdit) {
-            Text(stringResource(R.string.edit))
+        OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.add_account))
         }
     }
 }
 
 @Composable
 private fun SetupScreen(
-    initial: Credentials?,
+    initial: Account?,
     canCancel: Boolean,
-    onSaved: (Credentials) -> Unit,
+    onSaved: (Account) -> Unit,
+    onDelete: (Account) -> Unit,
     onCancel: () -> Unit,
 ) {
     var email by remember { mutableStateOf(initial?.email.orEmpty()) }
     var password by remember { mutableStateOf(initial?.password.orEmpty()) }
     var showPassword by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(text = stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
         Text(text = stringResource(R.string.setup_note), style = MaterialTheme.typography.bodyMedium)
@@ -150,7 +214,15 @@ private fun SetupScreen(
             modifier = Modifier.fillMaxWidth(),
         )
         Button(
-            onClick = { onSaved(Credentials(email.trim(), password)) },
+            onClick = {
+                onSaved(
+                    Account(
+                        id = initial?.id ?: UUID.randomUUID().toString(),
+                        email = email.trim(),
+                        password = password,
+                    ),
+                )
+            },
             enabled = email.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -161,6 +233,38 @@ private fun SetupScreen(
                 Text(stringResource(R.string.cancel))
             }
         }
+        if (initial != null) {
+            TextButton(
+                onClick = { confirmDelete = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.delete_account))
+            }
+        }
+    }
+
+    if (confirmDelete && initial != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.delete_title)) },
+            text = { Text(stringResource(R.string.delete_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete(initial)
+                    },
+                ) {
+                    Text(stringResource(R.string.confirm_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 
@@ -220,19 +324,6 @@ private fun BrowserScreen(credentials: Credentials, onClose: () -> Unit) {
                     if (selected == 1) it.post { session.openMail() }
                 },
             )
-            // DIAGNOSTIC TEMPORAIRE (à retirer une fois le problème de Proton Mail résolu).
-            if (selected == 1 && session.debug.isNotEmpty()) {
-                Text(
-                    text = session.debug,
-                    color = Color.Black,
-                    fontSize = 10.sp,
-                    lineHeight = 12.sp,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth(0.75f)
-                        .background(Color(0xDDFFFFFF)),
-                )
-            }
         }
     }
 }
