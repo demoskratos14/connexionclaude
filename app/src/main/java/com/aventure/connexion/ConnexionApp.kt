@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -113,6 +114,9 @@ fun ConnexionApp() {
                     editing = null
                     screen = Screen.SETUP
                 },
+                onNoteChange = { account, note ->
+                    updateAccounts(accounts.map { if (it.id == account.id) it.copy(note = note.trim()) else it })
+                },
             )
 
             Screen.BROWSER -> active?.let { account ->
@@ -131,8 +135,11 @@ private fun HomeScreen(
     onConnect: (Account) -> Unit,
     onEdit: (Account) -> Unit,
     onAdd: () -> Unit,
+    onNoteChange: (Account, String) -> Unit,
 ) {
     val context = LocalContext.current
+    // Adresse dont on est en train d'écrire la note (null = fenêtre fermée).
+    var noteTarget by remember { mutableStateOf<Account?>(null) }
     // Mode « modifier » : activé par le bouton du bas, un clic sur une adresse l'ouvre alors en modification.
     var editMode by remember { mutableStateOf(false) }
     Column(
@@ -183,9 +190,13 @@ private fun HomeScreen(
                                 )
                             }
                         }
-                        if (account.note.isNotBlank()) {
+                        // Petit bouton en bout de ligne : affiche la note, ou « + Note » s'il n'y en a pas.
+                        TextButton(
+                            onClick = { noteTarget = account },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
                             Text(
-                                text = account.note,
+                                text = account.note.ifBlank { stringResource(R.string.note_add) },
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
                             )
@@ -209,6 +220,45 @@ private fun HomeScreen(
             }
         }
     }
+
+    noteTarget?.let { target ->
+        NoteDialog(
+            initial = target.note,
+            onSave = { note ->
+                onNoteChange(target, note)
+                noteTarget = null
+            },
+            onDismiss = { noteTarget = null },
+        )
+    }
+}
+
+@Composable
+private fun NoteDialog(initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.note_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(SecretStore.MAX_NOTE_LENGTH) },
+                supportingText = { Text("${text.length}/${SecretStore.MAX_NOTE_LENGTH}") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -221,7 +271,6 @@ private fun SetupScreen(
 ) {
     var email by remember { mutableStateOf(initial?.email.orEmpty()) }
     var password by remember { mutableStateOf(initial?.password.orEmpty()) }
-    var note by remember { mutableStateOf(initial?.note.orEmpty()) }
     var showPassword by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -261,14 +310,6 @@ private fun SetupScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
-            value = note,
-            onValueChange = { note = it.take(SecretStore.MAX_NOTE_LENGTH) },
-            label = { Text(stringResource(R.string.note_label)) },
-            supportingText = { Text("${note.length}/${SecretStore.MAX_NOTE_LENGTH}") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
         Button(
             onClick = {
                 onSaved(
@@ -277,7 +318,7 @@ private fun SetupScreen(
                         email = email.trim(),
                         password = password,
                         lastLogin = initial?.lastLogin ?: 0L,
-                        note = note.trim(),
+                        note = initial?.note.orEmpty(),
                     ),
                 )
             },
