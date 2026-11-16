@@ -25,6 +25,9 @@
     <string name="delete_message">L\'adresse et son mot de passe seront effacés de ce téléphone.</string>
     <string name="confirm_delete">Supprimer</string>
 
+    <string name="download_saved">Enregistré dans Téléchargements : %1$s</string>
+    <string name="download_failed">Impossible d\'enregistrer ce fichier.</string>
+
     <string name="tab_claude">Claude</string>
     <string name="tab_mail">Proton Mail</string>
     <string name="close">Fermer et tout effacer</string>

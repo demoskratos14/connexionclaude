@@ -2,9 +2,12 @@ package com.aventure.connexion
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebStorage
@@ -32,9 +35,31 @@ class WebSession(
     private val credentials: Credentials,
     /** Appelé quand un lien de connexion Claude reçu par mail est envoyé vers l'onglet Claude. */
     private val onClaudeLink: () -> Unit,
+    /**
+     * Appelé quand une page demande à choisir un fichier à envoyer (pièce jointe, image...).
+     * Doit ouvrir le sélecteur de fichiers et renvoyer true, ou renvoyer false s'il ne peut pas.
+     */
+    private val onChooseFile: (ValueCallback<Array<Uri>>, Intent) -> Boolean,
 ) {
-    val claudeView: WebView = newWebView(context, ClaudeClient())
-    val mailView: WebView = newWebView(context, ProtonClient())
+    private val chromeClient = object : WebChromeClient() {
+        override fun onShowFileChooser(
+            webView: WebView?,
+            filePathCallback: ValueCallback<Array<Uri>>?,
+            fileChooserParams: WebChromeClient.FileChooserParams?,
+        ): Boolean {
+            if (filePathCallback == null || fileChooserParams == null) return false
+            return onChooseFile(filePathCallback, fileChooserParams.createIntent())
+        }
+    }
+
+    val claudeView: WebView = newWebView(context, ClaudeClient(), chromeClient)
+    val mailView: WebView = newWebView(context, ProtonClient(), chromeClient)
+
+    init {
+        // Téléchargements : chaque site n'a le droit d'envoyer des fichiers à l'appli que depuis sa propre adresse.
+        Downloads.installBridge(context, claudeView, "https://claude.ai")
+        Downloads.installBridge(context, mailView, "https://mail.proton.me")
+    }
 
     private var claudeFilled = false
     private var protonFilled = false
@@ -116,7 +141,11 @@ class WebSession(
         const val MAIL_URL = "https://mail.proton.me"
 
         @SuppressLint("SetJavaScriptEnabled")
-        fun newWebView(context: Context, client: WebViewClient): WebView = WebView(context).apply {
+        fun newWebView(
+            context: Context,
+            client: WebViewClient,
+            chrome: WebChromeClient,
+        ): WebView = WebView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -128,6 +157,10 @@ class WebSession(
             settings.setSupportMultipleWindows(false)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webViewClient = client
+            webChromeClient = chrome
+            setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                Downloads.start(context, this, url, userAgent, contentDisposition, mimeType)
+            }
         }
     }
 }

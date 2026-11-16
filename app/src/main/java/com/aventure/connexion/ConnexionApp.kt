@@ -1,9 +1,15 @@
 package com.aventure.connexion
 
+import android.content.ActivityNotFoundException
+import android.net.Uri
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import android.view.View
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -371,8 +377,31 @@ private fun SetupScreen(
 private fun BrowserScreen(credentials: Credentials, onClose: () -> Unit) {
     val context = LocalContext.current
     var selected by remember { mutableIntStateOf(0) }
+    // Envoi de fichiers : la page demande un fichier, on ouvre le sélecteur Android et on lui renvoie le choix.
+    var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    val chooserLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        pendingChooser?.onReceiveValue(
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
+        )
+        pendingChooser = null
+    }
     val session = remember {
-        WebSession(context, credentials, onClaudeLink = { selected = 0 })
+        WebSession(
+            context = context,
+            credentials = credentials,
+            onClaudeLink = { selected = 0 },
+            onChooseFile = { callback, intent ->
+                pendingChooser?.onReceiveValue(null)
+                pendingChooser = callback
+                try {
+                    chooserLauncher.launch(intent)
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    pendingChooser = null
+                    false
+                }
+            },
+        )
     }
 
     // Démarre la session à l'affichage ; à la fermeture (bouton, retour ou autre écran), tout est effacé.
