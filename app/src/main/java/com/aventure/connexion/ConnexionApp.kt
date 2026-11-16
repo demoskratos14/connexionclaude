@@ -10,10 +10,10 @@ import android.webkit.WebChromeClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -152,8 +154,8 @@ private fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = stringResource(if (editMode) R.string.edit_hint else R.string.home_intro),
@@ -161,7 +163,7 @@ private fun HomeScreen(
         )
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(accounts, key = { it.id }) { account ->
                 Card(
@@ -174,12 +176,12 @@ private fun HomeScreen(
                     },
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = account.email, style = MaterialTheme.typography.titleMedium)
+                            Text(text = account.email, style = MaterialTheme.typography.titleSmall)
                             val recent = account.lastLogin > 0 &&
                                 System.currentTimeMillis() - account.lastLogin < SecretStore.RECENT_LOGIN_MS
                             if (recent) {
@@ -191,22 +193,26 @@ private fun HomeScreen(
                                 }
                                 Text(
                                     text = label,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
                         // Petit bouton en bout de ligne : affiche la note, ou « + Note » s'il n'y en a pas.
-                        TextButton(
-                            onClick = { noteTarget = account },
-                            contentPadding = PaddingValues(horizontal = 8.dp),
-                        ) {
-                            Text(
-                                text = account.note.ifBlank { stringResource(R.string.note_add) },
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                            )
-                        }
+                        Text(
+                            text = account.note.ifBlank { stringResource(R.string.note_add) },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (account.note.isBlank()) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { noteTarget = account }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        )
                     }
                 }
             }
