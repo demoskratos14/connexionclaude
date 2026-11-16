@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
 import android.webkit.CookieManager
+import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.WebView
 import android.widget.Toast
@@ -26,6 +27,27 @@ import java.io.IOException
 object Downloads {
     private const val BRIDGE_NAME = "androidDownload"
 
+    // Une page qui télécharge un blob crée un lien <a download="nom.zip"> puis le clique : le navigateur ne
+    // transmet pas ce nom à l'appli. Ce script (lancé au tout début de chaque page) le retient au passage.
+    private const val TRACK_SCRIPT = """
+        (function () {
+            if (window.__dlTrack) { return; }
+            window.__dlTrack = true;
+            function remember(a) {
+                if (a && a.download) { window.__dlName = a.download; }
+            }
+            var originalClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () {
+                remember(this);
+                return originalClick.apply(this, arguments);
+            };
+            document.addEventListener('click', function (e) {
+                var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
+                remember(a);
+            }, true);
+        })();
+    """
+
     // Les fichiers « blob: » n'existent que dans la page : un script les lit puis les renvoie à l'appli.
     // Ce canal n'est ouvert qu'à l'adresse exacte de chaque site (jamais à une autre page).
     private const val BLOB_SCRIPT = """
@@ -37,7 +59,9 @@ object Downloads {
                 if (this.status !== 200) { return; }
                 var reader = new FileReader();
                 reader.onloadend = function () {
-                    androidDownload.postMessage(JSON.stringify({ name: __NAME__, data: reader.result }));
+                    var name = window.__dlName || __NAME__;
+                    window.__dlName = null;
+                    androidDownload.postMessage(JSON.stringify({ name: name, data: reader.result }));
                 };
                 reader.readAsDataURL(this.response);
             };
@@ -48,6 +72,9 @@ object Downloads {
     /** Autorise le site d'origine donné à envoyer ses fichiers blob à l'appli. */
     fun installBridge(context: Context, view: WebView, origin: String) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(view, TRACK_SCRIPT, setOf(origin))
+        }
         WebViewCompat.addWebMessageListener(view, BRIDGE_NAME, setOf(origin)) { _, message, _, _, _ ->
             val json = message.data ?: return@addWebMessageListener
             try {
@@ -128,7 +155,11 @@ object Downloads {
         save(context, name, mime, bytes)
     }
 
-    private fun save(context: Context, name: String, mime: String, bytes: ByteArray) {
+    private fun save(context: Context, rawName: String, rawMime: String, bytes: ByteArray) {
+        val name = finalName(rawName, bytes, rawMime)
+        // Android ajoute « .bin » si le type annoncé ne correspond pas à l'extension : on le déduit du nom.
+        val mime = MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: rawMime
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
@@ -153,6 +184,36 @@ object Downloads {
             saved(context, name)
         } catch (e: IOException) {
             failed(context)
+        }
+    }
+
+    /**
+     * Garde le nom de la page quand il a une vraie extension ; sinon (« .bin » ou rien) cherche la bonne
+     * extension d'après le contenu du fichier, puis d'après son type.
+     */
+    private fun finalName(name: String, bytes: ByteArray, mime: String): String {
+        val base = cleanName(name)
+        val extension = base.substringAfterLast('.', "")
+        if (base.contains('.') && extension.isNotEmpty() && !extension.equals("bin", ignoreCase = true)) return base
+        val stem = base.substringBeforeLast('.', base)
+        val guessed = sniffExtension(bytes)
+            ?: MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it != "bin" }
+        return if (guessed != null) "$stem.$guessed" else base
+    }
+
+    /** Reconnaît les formats courants à leurs premiers octets. */
+    private fun sniffExtension(bytes: ByteArray): String? {
+        fun startsWith(vararg prefix: Int) =
+            bytes.size >= prefix.size && prefix.indices.all { (bytes[it].toInt() and 0xFF) == prefix[it] }
+        return when {
+            startsWith(0x50, 0x4B, 0x03, 0x04) -> "zip"
+            startsWith(0x25, 0x50, 0x44, 0x46) -> "pdf"
+            startsWith(0x89, 0x50, 0x4E, 0x47) -> "png"
+            startsWith(0xFF, 0xD8, 0xFF) -> "jpg"
+            startsWith(0x47, 0x49, 0x46, 0x38) -> "gif"
+            startsWith(0x1F, 0x8B) -> "gz"
+            startsWith(0x37, 0x7A, 0xBC, 0xAF) -> "7z"
+            else -> null
         }
     }
 
