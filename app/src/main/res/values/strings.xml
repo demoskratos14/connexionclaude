@@ -7,8 +7,7 @@
     <string name="edit_account">Modifier une adresse</string>
     <string name="edit_cancel">Annuler la modification</string>
     <string name="edit_hint">Touche l\'adresse que tu veux modifier.</string>
-    <string name="last_login_today">Dernière connexion à %1$s</string>
-    <string name="last_login_yesterday">Dernière connexion hier à %1$s</string>
+    <string name="countdown_remaining">Compte à rebours : %1$s</string>
 
     <string name="setup_title">Mes informations</string>
     <string name="setup_note">L\'adresse sert pour Claude et pour Proton Mail. Le mot de passe Proton est chiffré avec une clé du Keystore Android et reste sur ce téléphone.</string>
