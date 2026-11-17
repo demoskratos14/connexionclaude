@@ -22,8 +22,8 @@ data class Account(
     val id: String,
     val email: String,
     val password: String,
-    /** Heure (en millisecondes) de la dernière connexion, 0 si aucune connexion de moins de 24 h. */
-    val lastLogin: Long = 0L,
+    /** Heure de fin (en millisecondes) du compte à rebours lancé à la connexion, 0 s'il n'y en a pas en cours. */
+    val countdownEnd: Long = 0L,
     /** Courte note affichée en bout de ligne dans la liste (MAX_NOTE_LENGTH caractères au plus). */
     val note: String = "",
 )
@@ -34,8 +34,8 @@ data class Account(
  */
 object SecretStore {
     private const val PREFS = "connexion"
-    /** Au-delà de cette durée (24 h), l'heure de dernière connexion n'est plus gardée ni affichée. */
-    const val RECENT_LOGIN_MS = 24L * 60 * 60 * 1000
+    /** Durée du compte à rebours lancé à la connexion : 5 h 15. */
+    const val COUNTDOWN_MS = (5 * 60 + 15) * 60 * 1000L
 
     const val MAX_NOTE_LENGTH = 12
 
@@ -69,7 +69,7 @@ object SecretStore {
                 JSONObject()
                     .put("id", account.id)
                     .put("email", account.email.trim())
-                    .put("lastLogin", account.lastLogin)
+                    .put("countdownEnd", account.countdownEnd)
                     .put("note", account.note)
                     .put("password", if (account.password.isEmpty()) "" else encrypt(account.password)),
             )
@@ -85,9 +85,9 @@ object SecretStore {
                 id = item.getString("id"),
                 email = item.getString("email"),
                 password = item.optString("password").takeIf { it.isNotEmpty() }?.let { decrypt(it) }.orEmpty(),
-                // Une connexion de plus de 24 h est oubliée dès la lecture (et donc à la prochaine sauvegarde).
-                lastLogin = item.optLong("lastLogin", 0L)
-                    .takeIf { System.currentTimeMillis() - it < RECENT_LOGIN_MS } ?: 0L,
+                // Un compte à rebours terminé est oublié dès la lecture (et donc à la prochaine sauvegarde).
+                countdownEnd = item.optLong("countdownEnd", 0L)
+                    .takeIf { it > System.currentTimeMillis() } ?: 0L,
                 note = item.optString("note").take(MAX_NOTE_LENGTH),
             )
         }

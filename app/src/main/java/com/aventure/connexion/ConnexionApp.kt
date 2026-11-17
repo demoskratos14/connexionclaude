@@ -2,8 +2,6 @@ package com.aventure.connexion
 
 import android.content.ActivityNotFoundException
 import android.net.Uri
-import android.text.format.DateFormat
-import android.text.format.DateUtils
 import android.view.View
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -44,9 +42,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,7 +60,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import java.util.Date
+import kotlinx.coroutines.delay
 import java.util.UUID
 
 private enum class Screen { HOME, SETUP, BROWSER }
@@ -108,8 +108,13 @@ fun ConnexionApp() {
             Screen.HOME -> HomeScreen(
                 accounts = accounts,
                 onConnect = { account ->
-                    // On note l'heure de cette connexion ; elle s'affiche sur la ligne de l'adresse.
-                    val connected = account.copy(lastLogin = System.currentTimeMillis())
+                    // Le compte à rebours démarre à la connexion ; s'il court déjà, il continue sans repartir de zéro.
+                    val now = System.currentTimeMillis()
+                    val connected = if (account.countdownEnd > now) {
+                        account
+                    } else {
+                        account.copy(countdownEnd = now + SecretStore.COUNTDOWN_MS)
+                    }
                     updateAccounts(accounts.map { if (it.id == connected.id) connected else it })
                     active = connected
                     screen = Screen.BROWSER
@@ -145,7 +150,16 @@ private fun HomeScreen(
     onAdd: () -> Unit,
     onNoteChange: (Account, String) -> Unit,
 ) {
-    val context = LocalContext.current
+    // Horloge qui avance chaque seconde, seulement tant qu'au moins un compte à rebours est en cours.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val anyCountdown = accounts.any { it.countdownEnd > now }
+    LaunchedEffect(anyCountdown) {
+        now = System.currentTimeMillis()
+        while (anyCountdown) {
+            delay(1000)
+            now = System.currentTimeMillis()
+        }
+    }
     // Adresse dont on est en train d'écrire la note (null = fenêtre fermée).
     var noteTarget by remember { mutableStateOf<Account?>(null) }
     // Mode « modifier » : activé par le bouton du bas, un clic sur une adresse l'ouvre alors en modification.
@@ -182,17 +196,10 @@ private fun HomeScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = account.email, style = MaterialTheme.typography.titleSmall)
-                            val recent = account.lastLogin > 0 &&
-                                System.currentTimeMillis() - account.lastLogin < SecretStore.RECENT_LOGIN_MS
-                            if (recent) {
-                                val time = DateFormat.getTimeFormat(context).format(Date(account.lastLogin))
-                                val label = if (DateUtils.isToday(account.lastLogin)) {
-                                    stringResource(R.string.last_login_today, time)
-                                } else {
-                                    stringResource(R.string.last_login_yesterday, time)
-                                }
+                            val remaining = account.countdownEnd - now
+                            if (remaining > 0) {
                                 Text(
-                                    text = label,
+                                    text = stringResource(R.string.countdown_remaining, formatRemaining(remaining)),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -243,6 +250,12 @@ private fun HomeScreen(
             onDismiss = { noteTarget = null },
         )
     }
+}
+
+/** 5 h 15 min restantes -> « 5:15:00 » (heures, minutes, secondes). */
+private fun formatRemaining(millis: Long): String {
+    val totalSeconds = millis / 1000
+    return "%d:%02d:%02d".format(totalSeconds / 3600, totalSeconds % 3600 / 60, totalSeconds % 60)
 }
 
 @Composable
@@ -329,7 +342,7 @@ private fun SetupScreen(
                         id = initial?.id ?: UUID.randomUUID().toString(),
                         email = email.trim(),
                         password = password,
-                        lastLogin = initial?.lastLogin ?: 0L,
+                        countdownEnd = initial?.countdownEnd ?: 0L,
                         note = initial?.note.orEmpty(),
                     ),
                 )
